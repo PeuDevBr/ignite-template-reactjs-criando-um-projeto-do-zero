@@ -1,14 +1,13 @@
+/* eslint-disable jsx-a11y/anchor-is-valid */
+import { useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
-import Prismic from '@prismicio/client';
-import { FiCalendar, FiUser } from 'react-icons/fi';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
-import { useState } from 'react';
 import { GetStaticProps } from 'next';
+import Prismic from '@prismicio/client';
+import { format } from 'date-fns';
+import ptBR from 'date-fns/locale/pt-BR';
+import { FiCalendar, FiUser } from 'react-icons/fi';
 import { getPrismicClient } from '../services/prismic';
-
-import commonStyles from '../styles/common.module.scss';
 import styles from './home.module.scss';
 
 interface Post {
@@ -31,40 +30,18 @@ interface HomeProps {
 }
 
 export default function Home({ postsPagination }: HomeProps): JSX.Element {
-  const formattedPost = postsPagination.results.map(post => {
-    return {
-      ...post,
-      first_publication_date: format(
-        new Date(post.first_publication_date),
-        'dd MMM yyyy',
-        {
-          locale: ptBR,
-        }
-      ),
-    };
-  });
-
-  const [posts, setPosts] = useState<Post[]>(formattedPost);
-  const [nextPage, setNextPage] = useState(postsPagination.next_page);
-  const [currentPage, setCurrentPage] = useState(1);
-
-  async function handleNextPage(): Promise<void> {
-    if (currentPage !== 1 && nextPage === null) {
-      return;
-    }
-
-    const postsResults = await fetch(`${nextPage}`).then(response =>
-      response.json()
-    );
-    setNextPage(postsResults.next_page);
-    setCurrentPage(postsResults.page);
-    console.log(postsResults);
-
-    const newPosts = postsResults.results.map(post => {
+  const [posts, setPosts] = useState<Post[]>(postsPagination.results);
+  const [nextPage, setNextPage] = useState<string | null>(
+    postsPagination.next_page
+  );
+  const handleRenderNextPage = async (): Promise<void> => {
+    const response = await fetch(nextPage);
+    const data = await response.json();
+    const newPosts = data.results.map(post => {
       return {
         uid: post.uid,
         first_publication_date: format(
-          new Date(post.first_publication_date),
+          new Date(post.last_publication_date),
           'dd MMM yyyy',
           {
             locale: ptBR,
@@ -77,40 +54,44 @@ export default function Home({ postsPagination }: HomeProps): JSX.Element {
         },
       };
     });
-
     setPosts([...posts, ...newPosts]);
-  }
-
+    setNextPage(data.next_page);
+  };
   return (
     <>
       <Head>
-        <title>Blog | Challenge III</title>
+        <title>Home | spacetraveling</title>
       </Head>
-
-      <main className={commonStyles.container}>
-        <div className={styles.posts}>
+      <main className={styles.container}>
+        <div className={styles.content}>
+          <img src="/images/logo.svg" alt="logo" />
           {posts.map(post => (
-            <Link href={`/posts/${post.uid}`} key={post.uid}>
-              <a className={styles.post}>
+            <Link key={post.uid} href={`/post/${post.uid}`}>
+              <a>
                 <strong>{post.data.title}</strong>
                 <p>{post.data.subtitle}</p>
-                <ul>
-                  <li>
+                <div>
+                  <div>
                     <FiCalendar />
-                    {post.first_publication_date}
-                  </li>
-                  <li>
+                    <time>{post.first_publication_date}</time>
+                  </div>
+                  <div>
                     <FiUser />
-                    {post.data.author}
-                  </li>
-                </ul>
+                    <span>{post.data.author}</span>
+                  </div>
+                </div>
               </a>
             </Link>
           ))}
-
-          <button type="button" onClick={handleNextPage}>
-            Load more posts
-          </button>
+          {nextPage && (
+            <a
+              className={styles.loadMore}
+              href="/#"
+              onClick={handleRenderNextPage}
+            >
+              Carregar mais posts
+            </a>
+          )}
         </div>
       </main>
     </>
@@ -122,14 +103,21 @@ export const getStaticProps: GetStaticProps = async () => {
   const postsResponse = await prismic.query(
     [Prismic.Predicates.at('document.type', 'post')],
     {
+      fetch: ['post.title', 'post.subtitle', 'post.author'],
       pageSize: 1,
     }
   );
-
+  const { next_page } = postsResponse;
   const posts = postsResponse.results.map(post => {
     return {
       uid: post.uid,
-      first_publication_date: post.first_publication_date,
+      first_publication_date: format(
+        new Date(post.last_publication_date),
+        'dd MMM yyyy',
+        {
+          locale: ptBR,
+        }
+      ),
       data: {
         title: post.data.title,
         subtitle: post.data.subtitle,
@@ -137,15 +125,13 @@ export const getStaticProps: GetStaticProps = async () => {
       },
     };
   });
-
-  const postsPagination = {
-    next_page: postsResponse.next_page,
-    results: posts,
-  };
-
   return {
     props: {
-      postsPagination,
+      postsPagination: {
+        next_page,
+        results: posts,
+      },
+      revalidate: 60 * 30, // 30 min
     },
   };
 };
